@@ -2541,7 +2541,12 @@ class GenerationMixin:
             if synced_gpus and this_peer_finished:
                 continue  # don't waste resources running the code we don't need
 
+            # Get decoder embeddings before the last linear layer
+            # Shape: (batch_size, sequence_length, hidden_size)
+            next_token_embedding = outputs.hidden_states[-1][:, -1, :]
             next_token_logits = outputs.logits[:, -1, :]
+
+            next_token_logits = embedding_processor(next_token_embedding, next_token_logits)
 
             # pre-process distribution
             next_token_scores = logits_processor(input_ids, next_token_logits)

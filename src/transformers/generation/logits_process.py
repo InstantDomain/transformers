@@ -48,6 +48,27 @@ LOGITS_PROCESSOR_INPUTS_DOCSTRING = r"""
 """
 
 
+EMBEDDING_PROCESSOR_INPUTS_DOCSTRING = r"""
+    Args:
+        input_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`):
+            Indices of input sequence tokens in the vocabulary.
+
+            Indices can be obtained using [`BertTokenizer`]. See [`PreTrainedTokenizer.encode`] and
+            [`PreTrainedTokenizer.__call__`] for details.
+
+            [What are input IDs?](../glossary#input-ids)
+        scores (`torch.FloatTensor` of shape `(batch_size, config.vocab_size)`):
+            Prediction scores of a language modeling head. These can be logits for each vocabulary when not using beam
+            search or log softmax for each vocabulary token when using beam search
+        kwargs:
+            Additional logits processor specific kwargs.
+
+    Return:
+        `torch.FloatTensor` of shape `(batch_size, config.vocab_size)`: The processed prediction scores.
+
+"""
+
+
 class LogitsProcessor:
     """Abstract base class for all logit processors that can be applied during generation."""
 
@@ -58,7 +79,6 @@ class LogitsProcessor:
             f"{self.__class__} is an abstract class. Only classes inheriting this class can be called."
         )
 
-
 class LogitsWarper:
     """Abstract base class for all logit warpers that can be applied during generation with multinomial sampling."""
 
@@ -68,6 +88,73 @@ class LogitsWarper:
         raise NotImplementedError(
             f"{self.__class__} is an abstract class. Only classes inheriting this class can be called."
         )
+
+
+class LogitsProcessorList(list):
+    """
+    This class can be used to create a list of [`LogitsProcessor`] or [`LogitsWarper`] to subsequently process a
+    `scores` input tensor. This class inherits from list and adds a specific *__call__* method to apply each
+    [`LogitsProcessor`] or [`LogitsWarper`] to the inputs.
+    """
+
+    @add_start_docstrings(LOGITS_PROCESSOR_INPUTS_DOCSTRING)
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> torch.FloatTensor:
+        for processor in self:
+            function_args = inspect.signature(processor.__call__).parameters
+            if len(function_args) > 2:
+                if not all(arg in kwargs for arg in list(function_args.keys())[2:]):
+                    raise ValueError(
+                        f"Make sure that all the required parameters: {list(function_args.keys())} for "
+                        f"{processor.__class__} are passed to the logits processor."
+                    )
+                scores = processor(input_ids, scores, **kwargs)
+            else:
+                scores = processor(input_ids, scores)
+        return scores
+
+
+class EmbeddingProcessor:
+    """Abstract base class for all embedding processors that can be applied during generation."""
+
+    @add_start_docstrings(LOGITS_PROCESSOR_INPUTS_DOCSTRING)
+    def __call__(
+        self,
+        input_ids: torch.LongTensor,
+        embeddings: torch.FloatTensor,
+        scores: torch.FloatTensor
+    ) -> torch.FloatTensor:
+        """Torch method for processing logits."""
+        raise NotImplementedError(
+            f"{self.__class__} is an abstract class. Only classes inheriting this class can be called."
+        )
+        
+class EmbeddingProcessorList(list):
+    """
+    This class can be used to create a list of [`EmbeddingProcessor`] or [`Logto subsequently process a
+    `scores` input tensor. This class inherits from list and adds a specific *__call__* method to apply each
+    [`LogitsProcessor`] or [`LogitsWarper`] to the inputs.
+    """
+
+    @add_start_docstrings(LOGITS_PROCESSOR_INPUTS_DOCSTRING)
+    def __call__(
+        self,
+        input_ids: torch.LongTensor,
+        embeddings: torch.FloatTensor,
+        scores: torch.FloatTensor,
+        **kwargs
+    ) -> torch.FloatTensor:
+        for processor in self:
+            function_args = inspect.signature(processor.__call__).parameters
+            if len(function_args) > 2:
+                if not all(arg in kwargs for arg in list(function_args.keys())[2:]):
+                    raise ValueError(
+                        f"Make sure that all the required parameters: {list(function_args.keys())} for "
+                        f"{processor.__class__} are passed to the logits processor."
+                    )
+                scores = processor(input_ids, embeddings, scores, **kwargs)
+            else:
+                scores = processor(input_ids, embeddings, scores)
+        return scores
 
 
 class LogitsProcessorList(list):
